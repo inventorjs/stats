@@ -124,6 +124,8 @@ export class FpsStats {
       let startTime = 0
       let frames = 0
       const samples: number[] = []
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      const self = this
       function doCollect(this: FpsStats, time: number) {
         if (!startTime) {
           startTime = time
@@ -145,9 +147,9 @@ export class FpsStats {
             return resolve(samples)
           }
         }
-        window.requestAnimationFrame(doCollect.bind(this))
+        window.requestAnimationFrame(doCollect.bind(self))
       }
-      window.requestAnimationFrame(doCollect.bind(this))
+      window.requestAnimationFrame(doCollect.bind(self))
     })
     return this.collectPromise
   }
