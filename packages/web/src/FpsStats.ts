@@ -145,9 +145,9 @@ export class FpsStats {
             return resolve(samples)
           }
         }
-        window.requestAnimationFrame(doCollect)
+        window.requestAnimationFrame(doCollect.bind(this))
       }
-      window.requestAnimationFrame(doCollect)
+      window.requestAnimationFrame(doCollect.bind(this))
     })
     return this.collectPromise
   }
