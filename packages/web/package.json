@@ -1,0 +1,38 @@
+{
+  "name": "@inventorjs/stats-web",
+  "version": "0.0.1",
+  "description": "web stats",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/inventorjs/stats.git",
+    "directory": "packages/web"
+  },
+  "author": "sunkeysun",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "files": [
+    "dist/"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@7.13.2",
+  "scripts": {
+    "dev": "tsc --watch",
+    "build": "rimraf dist && tsc",
+    "lint": "lint-staged --quiet",
+    "publish:patch": "pnpm build && pnpm -r exec pnpm version patch && pnpm -r publish",
+    "publish:minor": "pnpm build && pnpm -r exec pnpm version minor && pnpm -r publish",
+    "publish:major": "pnpm build && pnpm -r exec pnpm version major && pnpm -r publish"
+  },
+  "devDependencies": {
+    "lint-staged": "^13.2.2",
+    "prettier": "^2.7.1",
+    "rimraf": "^3.0.2",
+    "tslib": "^2.4.0",
+    "typescript": "^4.9.5"
+  },
+  "lint-staged": {
+    "*.ts(x)?": "eslint"
+  }
+}
