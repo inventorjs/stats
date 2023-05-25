@@ -36,7 +36,7 @@ interface ReportData {
 }
 
 interface Params {
-  /** 低 fps 下限固定阈值，传这个值，则 lowThresholdPercent 失效 */
+  /** 低 fps 下限阈值，传这个值，则 lowThresholdPercent 失效 */
   lowThreshold?: number
   /** 低 fps 下限阈值百分比, 如 低于屏幕额定 fps(60) 的60%(即 36)认为是低fps，则传 0.6 */
   lowThresholdPercent?: number

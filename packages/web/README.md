@@ -26,13 +26,15 @@ web 页面统计脚本，采集页面行为数据，如 fps 等
 ```
 // 采集对象构造参数
 interface Params {
+  /** 低 fps 下限阈值，传这个值，则 lowThresholdPercent 失效 */
+  lowThreshold?: number
   /** 低 fps 下限阈值百分比, 如 低于屏幕额定 fps(60) 的60%(即 36)认为是低fps，则传 0.6 */
   lowThresholdPercent?: number
   /** 低 fps 样本数百分比，如低样本数占总样本数 30% 认为是低fps，则传 0.3 */
   lowSamplePercent?: number
-  /** 采集时长 ms，采集一段时间内的样本 */
+  /** 采集时长 ms，采集一段时间内的样本, 时长越长，低 fps 判断越准确 */
   collectDuration?: number
-  /** 采集间隔 ms，会将间隔内的帧数相加，然后计算平均值，增加准确性 */
+  /** 采集间隔 ms，会将间隔内的帧数相加，然后计算平均值，间隔越短，灵敏度越高 */
   collectInterval?: number
   /** 采集最大次数，达到采集最大次数则自动停止采集, 默认不限制 */
   collectMaxCount?: number
