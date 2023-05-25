@@ -2,9 +2,12 @@
  * fps 采集脚本
  */
 
-const FPS_HIGHT = 120
+const FPS_EX_HIGH = 144
+const FPS_HIGH = 120
 const FPS_NORMAL = 60
+const RATED_FRAME_NUM = 5
 const NORMAL_FRAME_TIME = 16
+const HIGH_FRAME_TIME = 8
 
 let isInited = false
 
@@ -15,8 +18,8 @@ interface Stats {
   samples: number[]
   /** 低 fps 样本列表 */
   lowSamples: number[]
-  /** 是否是高刷屏, 通过帧之间的间隔获取，如何 60hz 为 16.6ms，120hz 为 8.3ms, 侦测到存在帧时长<16ms 则认为是高刷屏 */
-  isHighScreen: boolean
+  /** 根据帧时间推算出的屏幕额定帧率 */
+  ratedFps: number
 }
 
 interface ReportData {
@@ -35,6 +38,8 @@ interface Params {
   collectDuration?: number
   /** 采集间隔 ms，会将间隔内的帧数相加，然后计算平均值，增加准确性 */
   collectInterval?: number
+  /** 采集最大次数，达到采集最大次数则自动停止采集, 默认不限制 */
+  collectMaxCount?: number
   /** 触发采集的事件 */
   monitorEvents?: Array<'DOMContentLoaded' | 'scroll' | 'click'>
   /** 采集结果上报函数 */
@@ -43,13 +48,18 @@ interface Params {
 
 export class FpsStats {
   collectPromise: Promise<number[]> | null = null
-  sampleSize = 0
   lowThresholdPercent = 0
+  lowSamplePercent = 0
   collectInterval = 0
+  collectDuration = 0
+  collectMaxCount = 0
+  collectCount = 0
   monitorEvents: Array<'DOMContentLoaded' | 'scroll' | 'click'> = []
-  lowSampleSize = 0
+  normalRefreshNum = 0
   highRefreshNum = 0
-  monitorHandlers: Record<string, Array<(e: Event) => Promise<void>>> = {}
+  exHighRefreshNum = 0
+  ratedFpsCache = 0
+  monitorHandlers: Record<string, (e: Event) => Promise<void>> = {}
   report: Params['report']
 
   constructor({
@@ -57,6 +67,7 @@ export class FpsStats {
     lowSamplePercent = 0.3,
     collectDuration = 10 * 1000,
     collectInterval = 1000,
+    collectMaxCount = 0,
     monitorEvents = ['DOMContentLoaded', 'scroll', 'click'],
     report,
   }: Params = {}) {
@@ -104,49 +115,73 @@ export class FpsStats {
       return
     }
     isInited = true
-    this.sampleSize = collectDuration / collectInterval
     this.lowThresholdPercent = lowThresholdPercent
+    this.lowSamplePercent = lowSamplePercent
+    this.collectDuration = collectDuration
     this.collectInterval = collectInterval
+    this.collectMaxCount = collectMaxCount
     this.monitorEvents = monitorEvents
-    this.lowSampleSize = this.sampleSize * lowSamplePercent
     this.report = report
-    this.highRefreshNum = 0
     this.monitorHandlers = {}
   }
 
-  get isHighScreen() {
-    return this.highRefreshNum > 5
+  get ratedFps() {
+    if (this.ratedFpsCache) return this.ratedFpsCache
+
+    if (this.exHighRefreshNum > RATED_FRAME_NUM) {
+      this.ratedFpsCache = FPS_EX_HIGH
+    } else if (this.highRefreshNum > RATED_FRAME_NUM) {
+      this.ratedFpsCache = FPS_HIGH
+    } else if (this.normalRefreshNum > RATED_FRAME_NUM) {
+      this.ratedFpsCache = FPS_NORMAL
+    } else {
+      this.ratedFpsCache = 0
+    }
+    return this.ratedFpsCache
+  }
+
+  calculateRatedFps(frameTime: number) {
+    if (this.ratedFps) return
+
+    if (frameTime < HIGH_FRAME_TIME) {
+      this.exHighRefreshNum += 1
+    } else if (frameTime < NORMAL_FRAME_TIME) {
+      this.highRefreshNum += 1
+    } else {
+      this.normalRefreshNum += 1
+    }
   }
 
   collect() {
     if (this.collectPromise) return this.collectPromise
     this.collectPromise = new Promise((resolve) => {
-      let startTime = 0
+      const startTime = Date.now()
+      let periodStartTime = 0
+      let prevTime = 0
       let frames = 0
       const samples: number[] = []
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const self = this
       function doCollect(this: FpsStats, time: number) {
-        if (!startTime) {
-          startTime = time
+        if (!periodStartTime) {
+          periodStartTime = time
         } else {
           frames += 1
-          const endTime = time
-          const period = endTime - startTime
-          if (!this.isHighScreen && period < NORMAL_FRAME_TIME) {
-            this.highRefreshNum += 1
-          }
+          const period = time - periodStartTime
+          const frameTime = time - prevTime
+          this.calculateRatedFps(frameTime)
           if (period >= this.collectInterval) {
             const fps = Math.round((frames / period) * 1000)
             samples.push(fps)
-            startTime = endTime
+            periodStartTime = time
             frames = 0
           }
-          if (samples.length >= this.sampleSize) {
+          if (Date.now() - startTime > this.collectDuration) {
             this.collectPromise = null
             return resolve(samples)
           }
         }
+        prevTime = time
         window.requestAnimationFrame(doCollect.bind(self))
       }
       window.requestAnimationFrame(doCollect.bind(self))
@@ -156,22 +191,34 @@ export class FpsStats {
 
   async getStats() {
     const samples = await this.collect()
-    const screenFps = this.isHighScreen ? FPS_HIGHT : FPS_NORMAL
     const lowSamples = samples.filter(
-      (fps) => fps <= screenFps * this.lowThresholdPercent,
+      (fps) => fps <= this.ratedFps * this.lowThresholdPercent,
     )
     let isLow = false
-    if (lowSamples.length >= this.lowSampleSize) {
+    if (
+      !samples.length ||
+      lowSamples.length / samples.length >= this.lowSamplePercent
+    ) {
       isLow = true
     }
-    return { isLow, samples, lowSamples, isHighScreen: this.isHighScreen }
+    return { isLow, samples, lowSamples, ratedFps: this.ratedFps }
   }
 
   startMonitor() {
     let isCollecting = false
     this.monitorEvents.forEach((eventType) => {
+      if (this.monitorHandlers[eventType]) {
+        return
+      }
       const handler = async (event: Event) => {
+        if (
+          this.collectMaxCount > 0 &&
+          this.collectCount > this.collectMaxCount
+        ) {
+          return this.stopMonitor()
+        }
         if (!isCollecting) {
+          this.collectCount += 1
           isCollecting = true
           try {
             const stats = await this.getStats()
@@ -185,7 +232,7 @@ export class FpsStats {
       window.addEventListener(eventType, handler, {
         passive: eventType === 'scroll' ? true : undefined,
       })
-      this.monitorHandlers[eventType] = [handler]
+      this.monitorHandlers[eventType] = handler
     })
   }
 
@@ -195,10 +242,10 @@ export class FpsStats {
       stopEvents = this.monitorEvents
     }
     stopEvents.forEach((eventType) => {
-      const handler = this.monitorHandlers[eventType]?.[0]
+      const handler = this.monitorHandlers[eventType]
       if (handler) {
         window.removeEventListener(eventType, handler)
-        delete this.monitorHandlers[eventType][0]
+        delete this.monitorHandlers[eventType]
       }
     })
   }

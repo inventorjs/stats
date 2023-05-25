@@ -34,6 +34,8 @@ interface Params {
   collectDuration?: number
   /** 采集间隔 ms，会将间隔内的帧数相加，然后计算平均值，增加准确性 */
   collectInterval?: number
+  /** 采集最大次数，达到采集最大次数则自动停止采集, 默认不限制 */
+  collectMaxCount?: number
   /** 触发采集的事件 */
   monitorEvents?: Array<'DOMContentLoaded' | 'scroll' | 'click'>
   /** 采集结果上报函数 */
@@ -55,7 +57,7 @@ interface Stats {
   samples: number[]
   /** 低 fps 样本列表 */
   lowSamples: number[]
-  /** 是否是高刷屏, 通过帧之间的间隔获取，如何 60hz 为 16.6ms，120hz 为 8.3ms, 侦测到存在帧时长<16ms 则认为是高刷屏 */
-  isHighScreen: boolean
+  /** 根据帧时间推算出的屏幕额定帧率 */
+  ratedFps: number
 }
 ```
