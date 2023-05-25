@@ -5,7 +5,7 @@
 const FPS_EX_HIGH = 144
 const FPS_HIGH = 120
 const FPS_NORMAL = 60
-const RATED_FRAME_NUM = 5
+const RATED_FRAME_NUM = 3
 const NORMAL_FRAME_TIME = 16
 const HIGH_FRAME_TIME = 8
 
@@ -18,6 +18,8 @@ interface Stats {
   samples: number[]
   /** 低 fps 样本列表 */
   lowSamples: number[]
+  /** 低 fps 占样本比例 */
+  lowPercent: number
   /** 根据帧时间推算出的屏幕额定帧率 */
   ratedFps: number
 }
@@ -27,6 +29,10 @@ interface ReportData {
   stats: Stats
   /** 触发采集的事件对象 */
   event: Event
+  /** 扩展数据 */
+  extra: {
+    scrollY: number[]
+  }
 }
 
 interface Params {
@@ -34,9 +40,9 @@ interface Params {
   lowThresholdPercent?: number
   /** 低 fps 样本数百分比，如低样本数占总样本数 30% 认为是低fps，则传 0.3 */
   lowSamplePercent?: number
-  /** 采集时长 ms，采集一段时间内的样本 */
+  /** 采集时长 ms，采集一段时间内的样本, 时长越长，低 fps 判断越准确 */
   collectDuration?: number
-  /** 采集间隔 ms，会将间隔内的帧数相加，然后计算平均值，增加准确性 */
+  /** 采集间隔 ms，会将间隔内的帧数相加，然后计算平均值，间隔越短，灵敏度越高 */
   collectInterval?: number
   /** 采集最大次数，达到采集最大次数则自动停止采集, 默认不限制 */
   collectMaxCount?: number
@@ -136,12 +142,15 @@ export class FpsStats {
       this.ratedFpsCache = FPS_NORMAL
     } else {
       this.ratedFpsCache = 0
+      this.exHighRefreshNum = 0 
+      this.highRefreshNum = 0
+      this.normalRefreshNum = 0
     }
     return this.ratedFpsCache
   }
 
   calculateRatedFps(frameTime: number) {
-    if (this.ratedFps) return
+    if (this.ratedFpsCache) return
 
     if (frameTime < HIGH_FRAME_TIME) {
       this.exHighRefreshNum += 1
@@ -195,13 +204,17 @@ export class FpsStats {
       (fps) => fps <= this.ratedFps * this.lowThresholdPercent,
     )
     let isLow = false
-    if (
-      !samples.length ||
-      lowSamples.length / samples.length >= this.lowSamplePercent
-    ) {
+    const lowPercent = lowSamples.length / samples.length
+    if (!samples.length || lowPercent >= this.lowSamplePercent) {
       isLow = true
     }
-    return { isLow, samples, lowSamples, ratedFps: this.ratedFps }
+    return {
+      isLow,
+      samples,
+      lowSamples,
+      lowPercent: Math.round(lowPercent * 10) / 10,
+      ratedFps: this.ratedFps,
+    }
   }
 
   startMonitor() {
@@ -221,9 +234,14 @@ export class FpsStats {
           this.collectCount += 1
           isCollecting = true
           try {
+            const scrollYStart = window.scrollY ?? window.pageYOffset ?? 0;
             const stats = await this.getStats()
             if (typeof this.report === 'function') {
-              this.report({ stats, event })
+              const scrollYEnd = window.scrollY ?? window.pageYOffset ?? 0;
+              const extra = {
+                scrollY: [scrollYStart, scrollYEnd],
+              }
+              this.report({ stats, event, extra })
             }
             isCollecting = false
           } catch (err) {}

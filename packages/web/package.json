@@ -1,6 +1,6 @@
 {
   "name": "@inventorjs/stats-web",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "web stats",
   "repository": {
     "type": "git",
@@ -20,10 +20,7 @@
   "scripts": {
     "dev": "tsc --watch",
     "build": "rimraf dist && tsc",
-    "lint": "lint-staged --quiet",
-    "publish:patch": "pnpm build && pnpm -r exec pnpm version patch && pnpm -r publish",
-    "publish:minor": "pnpm build && pnpm -r exec pnpm version minor && pnpm -r publish",
-    "publish:major": "pnpm build && pnpm -r exec pnpm version major && pnpm -r publish"
+    "lint": "lint-staged --quiet"
   },
   "devDependencies": {
     "lint-staged": "^13.2.2",
