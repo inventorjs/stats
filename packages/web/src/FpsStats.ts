@@ -36,6 +36,8 @@ interface ReportData {
 }
 
 interface Params {
+  /** 低 fps 下限固定阈值，传这个值，则 lowThresholdPercent 失效 */
+  lowThreshold?: number
   /** 低 fps 下限阈值百分比, 如 低于屏幕额定 fps(60) 的60%(即 36)认为是低fps，则传 0.6 */
   lowThresholdPercent?: number
   /** 低 fps 样本数百分比，如低样本数占总样本数 30% 认为是低fps，则传 0.3 */
@@ -54,6 +56,7 @@ interface Params {
 
 export class FpsStats {
   collectPromise: Promise<number[]> | null = null
+  lowThreshold = 0
   lowThresholdPercent = 0
   lowSamplePercent = 0
   collectInterval = 0
@@ -69,8 +72,9 @@ export class FpsStats {
   report: Params['report']
 
   constructor({
-    lowThresholdPercent = 0.6,
-    lowSamplePercent = 0.3,
+    lowThreshold = 0,
+    lowThresholdPercent = 0.5,
+    lowSamplePercent = 0.5,
     collectDuration = 10 * 1000,
     collectInterval = 1000,
     collectMaxCount = 0,
@@ -104,7 +108,13 @@ export class FpsStats {
       return
     }
     if (
-      !Number(lowThresholdPercent) ||
+      !isNaN(lowThreshold) ||
+      (lowThreshold && (lowThreshold < 0 || lowThreshold >= FPS_NORMAL))
+    ) {
+      console.warn(`${name}: lowThreshold 必须是小于浏览器额定帧率的整数`)
+      return
+    }
+    if (
       !Number(lowThresholdPercent) ||
       lowThresholdPercent < 0 ||
       lowThresholdPercent > 1
@@ -127,6 +137,7 @@ export class FpsStats {
     this.collectInterval = collectInterval
     this.collectMaxCount = collectMaxCount
     this.monitorEvents = monitorEvents
+    this.lowThreshold = lowThreshold
     this.report = report
     this.monitorHandlers = {}
   }
@@ -142,7 +153,7 @@ export class FpsStats {
       this.ratedFpsCache = FPS_NORMAL
     } else {
       this.ratedFpsCache = 0
-      this.exHighRefreshNum = 0 
+      this.exHighRefreshNum = 0
       this.highRefreshNum = 0
       this.normalRefreshNum = 0
     }
@@ -200,9 +211,9 @@ export class FpsStats {
 
   async getStats() {
     const samples = await this.collect()
-    const lowSamples = samples.filter(
-      (fps) => fps <= this.ratedFps * this.lowThresholdPercent,
-    )
+    const lowThreshold =
+      this.lowThreshold || this.ratedFps * this.lowThresholdPercent
+    const lowSamples = samples.filter((fps) => fps <= lowThreshold)
     let isLow = false
     const lowPercent = lowSamples.length / samples.length
     if (!samples.length || lowPercent >= this.lowSamplePercent) {
@@ -234,10 +245,14 @@ export class FpsStats {
           this.collectCount += 1
           isCollecting = true
           try {
-            const scrollYStart = window.scrollY ?? window.pageYOffset ?? 0;
+            const scrollYStart = Math.round(
+              window.scrollY ?? window.pageYOffset ?? 0,
+            )
             const stats = await this.getStats()
             if (typeof this.report === 'function') {
-              const scrollYEnd = window.scrollY ?? window.pageYOffset ?? 0;
+              const scrollYEnd = Math.round(
+                window.scrollY ?? window.pageYOffset ?? 0,
+              )
               const extra = {
                 scrollY: [scrollYStart, scrollYEnd],
               }
