@@ -81,7 +81,7 @@ export class FpsStats {
     monitorEvents = ['DOMContentLoaded', 'scroll', 'click'],
     report,
   }: Params = {}) {
-    const name = this.constructor.name
+    const name = 'FpsStats'
     if (isInited) {
       console.warn(`${name}: 实例初始化失败, 当前统计对象仅支持单个实例`)
       return
@@ -108,7 +108,7 @@ export class FpsStats {
       return
     }
     if (
-      !isNaN(lowThreshold) ||
+      isNaN(lowThreshold) ||
       (lowThreshold && (lowThreshold < 0 || lowThreshold >= FPS_NORMAL))
     ) {
       console.warn(`${name}: lowThreshold 必须是小于浏览器额定帧率的整数`)
