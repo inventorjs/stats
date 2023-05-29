@@ -219,7 +219,7 @@ export class FpsStats {
       this.lowThreshold || this.ratedFps * this.lowThresholdPercent
     const lowSamples = samples.filter((fps) => fps <= lowThreshold)
     let isLow = false
-    const lowPercent = lowSamples.length / samples.length
+    const lowPercent = samples.length > 0 ? lowSamples.length / samples.length : 0
     if (!samples.length || lowPercent >= this.lowSamplePercent) {
       isLow = true
     }
