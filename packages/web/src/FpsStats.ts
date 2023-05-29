@@ -55,7 +55,7 @@ interface Params {
 }
 
 export class FpsStats {
-  collectPromise: Promise<number[]> | null = null
+  collectPromise: Promise<{ samples: number[]; rafCount: number }> | null = null
   lowThreshold = 0
   lowThresholdPercent = 0
   lowSamplePercent = 0
@@ -179,10 +179,12 @@ export class FpsStats {
       let periodStartTime = 0
       let prevTime = 0
       let frames = 0
+      let rafCount = 0
       const samples: number[] = []
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const self = this
       function doCollect(this: FpsStats, time: number) {
+        rafCount += 1
         if (!periodStartTime) {
           periodStartTime = time
         } else {
@@ -198,19 +200,21 @@ export class FpsStats {
           }
           if (Date.now() - startTime > this.collectDuration) {
             this.collectPromise = null
-            return resolve(samples)
+            return resolve({ samples, rafCount })
           }
         }
         prevTime = time
         window.requestAnimationFrame(doCollect.bind(self))
       }
+      // 避免 raf 不触发，一直等待
       window.requestAnimationFrame(doCollect.bind(self))
+      setTimeout(() => resolve({ samples, rafCount }), this.collectDuration)
     })
     return this.collectPromise
   }
 
   async getStats() {
-    const samples = await this.collect()
+    const { samples, rafCount } = await this.collect()
     const lowThreshold =
       this.lowThreshold || this.ratedFps * this.lowThresholdPercent
     const lowSamples = samples.filter((fps) => fps <= lowThreshold)
@@ -225,6 +229,7 @@ export class FpsStats {
       lowSamples,
       lowPercent: Math.round(lowPercent * 10) / 10,
       ratedFps: this.ratedFps,
+      rafCount,
     }
   }
 
