@@ -284,6 +284,11 @@ export class FpsStats {
       })
       this.monitorHandlers[eventType] = handler
     })
+    if (!this.monitorHandlers['focus'] && !~this.monitorEvents.indexOf('focus')) {
+      const focusHandler = () => void(this.isWindowFocus = true)
+      window.addEventListener('focus', focusHandler)
+      this.monitorHandlers['focus'] = focusHandler
+    }
     if (!this.monitorHandlers['blur']) {
       const blurHandler = () => void(this.isWindowFocus = false)
       window.addEventListener('blur', blurHandler)
