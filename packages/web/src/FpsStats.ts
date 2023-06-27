@@ -35,6 +35,8 @@ interface ReportData {
   }
 }
 
+type MonitorEvents = Array<'DOMContentLoaded' | 'scroll' | 'click' | 'focus'>
+
 interface Params {
   /** 低 fps 下限阈值，传这个值，则 lowThresholdPercent 失效 */
   lowThreshold?: number
@@ -49,13 +51,16 @@ interface Params {
   /** 采集最大次数，达到采集最大次数则自动停止采集, 默认不限制 */
   collectMaxCount?: number
   /** 触发采集的事件 */
-  monitorEvents?: Array<'DOMContentLoaded' | 'scroll' | 'click' | 'focus'>
+  monitorEvents?: MonitorEvents
   /** 采集结果上报函数 */
   report?: (d: ReportData) => void
 }
 
 export class FpsStats {
   collectPromise: Promise<{ samples: number[]; rafCount: number }> | null = null
+  stopCollect: (r: string) => void = () => {
+    //
+  }
   lowThreshold = 0
   lowThresholdPercent = 0
   lowSamplePercent = 0
@@ -63,7 +68,7 @@ export class FpsStats {
   collectDuration = 0
   collectMaxCount = 0
   collectCount = 0
-  monitorEvents: Array<'DOMContentLoaded' | 'scroll' | 'click' | 'focus'> = []
+  monitorEvents: MonitorEvents = []
   RefreshNum = 0
   normalRefreshNum = 0
   highRefreshNum = 0
@@ -71,13 +76,12 @@ export class FpsStats {
   ratedFpsCache = 0
   monitorHandlers: Record<string, (e: Event) => Promise<void> | void> = {}
   report: Params['report']
-  isWindowFocus = true
 
   constructor({
     lowThreshold = 0,
     lowThresholdPercent = 0.5,
     lowSamplePercent = 0.5,
-    collectDuration = 10 * 1000,
+    collectDuration = 6 * 1000,
     collectInterval = 1000,
     collectMaxCount = 0,
     monitorEvents = ['DOMContentLoaded', 'scroll', 'click', 'focus'],
@@ -183,6 +187,7 @@ export class FpsStats {
       let frames = 0
       let rafCount = 0
       const samples: number[] = []
+      let animater: ReturnType<typeof requestAnimationFrame>
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const self = this
       function doCollect(this: FpsStats, time: number) {
@@ -206,15 +211,21 @@ export class FpsStats {
           }
         }
         prevTime = time
-        if (!this.isWindowFocus) {
-          reject(new Error('page not active, collect stopped.'))
-          return
-        }
-        window.requestAnimationFrame(doCollect.bind(self))
+        animater = window.requestAnimationFrame(doCollect.bind(self))
       }
       // 避免 raf 不触发，一直等待
-      window.requestAnimationFrame(doCollect.bind(self))
-      setTimeout(() => resolve({ samples, rafCount }), this.collectDuration)
+      animater = window.requestAnimationFrame(doCollect.bind(self))
+      const timer = setTimeout(() => {
+        this.collectPromise = null
+        resolve({ samples, rafCount })
+      }, this.collectDuration)
+
+      this.stopCollect = (reason) => {
+        this.collectPromise = null
+        cancelAnimationFrame(animater)
+        clearTimeout(timer)
+        reject(reason)
+      }
     })
     return this.collectPromise
   }
@@ -247,9 +258,6 @@ export class FpsStats {
         return
       }
       const handler = async (event: Event) => {
-        if (event.type === 'focus') {
-          this.isWindowFocus = true
-        }
         if (
           this.collectMaxCount > 0 &&
           this.collectCount > this.collectMaxCount
@@ -284,13 +292,10 @@ export class FpsStats {
       })
       this.monitorHandlers[eventType] = handler
     })
-    if (!this.monitorHandlers['focus'] && !~this.monitorEvents.indexOf('focus')) {
-      const focusHandler = () => void(this.isWindowFocus = true)
-      window.addEventListener('focus', focusHandler)
-      this.monitorHandlers['focus'] = focusHandler
-    }
     if (!this.monitorHandlers['blur']) {
-      const blurHandler = () => void(this.isWindowFocus = false)
+      const blurHandler = () => {
+        this.stopCollect('@inventorjs/stats-web: lose focus, fps monitor stopd.')
+      }
       window.addEventListener('blur', blurHandler)
       this.monitorHandlers['blur'] = blurHandler
     }
