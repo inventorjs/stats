@@ -49,7 +49,7 @@ interface Params {
   /** 采集最大次数，达到采集最大次数则自动停止采集, 默认不限制 */
   collectMaxCount?: number
   /** 触发采集的事件 */
-  monitorEvents?: Array<'DOMContentLoaded' | 'scroll' | 'click'>
+  monitorEvents?: Array<'DOMContentLoaded' | 'scroll' | 'click' | 'focus'>
   /** 采集结果上报函数 */
   report?: (d: ReportData) => void
 }
@@ -63,13 +63,15 @@ export class FpsStats {
   collectDuration = 0
   collectMaxCount = 0
   collectCount = 0
-  monitorEvents: Array<'DOMContentLoaded' | 'scroll' | 'click'> = []
+  monitorEvents: Array<'DOMContentLoaded' | 'scroll' | 'click' | 'focus'> = []
+  RefreshNum = 0
   normalRefreshNum = 0
   highRefreshNum = 0
   exHighRefreshNum = 0
   ratedFpsCache = 0
-  monitorHandlers: Record<string, (e: Event) => Promise<void>> = {}
+  monitorHandlers: Record<string, (e: Event) => Promise<void> | void> = {}
   report: Params['report']
+  isWindowFocus = true
 
   constructor({
     lowThreshold = 0,
@@ -78,7 +80,7 @@ export class FpsStats {
     collectDuration = 10 * 1000,
     collectInterval = 1000,
     collectMaxCount = 0,
-    monitorEvents = ['DOMContentLoaded', 'scroll', 'click'],
+    monitorEvents = ['DOMContentLoaded', 'scroll', 'click', 'focus'],
     report,
   }: Params = {}) {
     const name = 'FpsStats'
@@ -174,7 +176,7 @@ export class FpsStats {
 
   collect() {
     if (this.collectPromise) return this.collectPromise
-    this.collectPromise = new Promise((resolve) => {
+    this.collectPromise = new Promise((resolve, reject) => {
       const startTime = Date.now()
       let periodStartTime = 0
       let prevTime = 0
@@ -204,6 +206,10 @@ export class FpsStats {
           }
         }
         prevTime = time
+        if (!this.isWindowFocus) {
+          reject(new Error('page not active, collect stopped.'))
+          return
+        }
         window.requestAnimationFrame(doCollect.bind(self))
       }
       // 避免 raf 不触发，一直等待
@@ -219,7 +225,8 @@ export class FpsStats {
       this.lowThreshold || this.ratedFps * this.lowThresholdPercent
     const lowSamples = samples.filter((fps) => fps <= lowThreshold)
     let isLow = false
-    const lowPercent = samples.length > 0 ? lowSamples.length / samples.length : 0
+    const lowPercent =
+      samples.length > 0 ? lowSamples.length / samples.length : 0
     if (!samples.length || lowPercent >= this.lowSamplePercent) {
       isLow = true
     }
@@ -240,6 +247,9 @@ export class FpsStats {
         return
       }
       const handler = async (event: Event) => {
+        if (event.type === 'focus') {
+          this.isWindowFocus = true
+        }
         if (
           this.collectMaxCount > 0 &&
           this.collectCount > this.collectMaxCount
@@ -251,20 +261,22 @@ export class FpsStats {
           isCollecting = true
           try {
             const scrollYStart = Math.round(
-              window.scrollY ?? window.pageYOffset ?? 0,
+              window.scrollY ?? window.scrollY ?? 0,
             )
             const stats = await this.getStats()
             if (typeof this.report === 'function') {
               const scrollYEnd = Math.round(
-                window.scrollY ?? window.pageYOffset ?? 0,
+                window.scrollY ?? window.scrollY ?? 0,
               )
               const extra = {
                 scrollY: [scrollYStart, scrollYEnd],
               }
               this.report({ stats, event, extra })
             }
-            isCollecting = false
-          } catch (err) {}
+          } catch (err) {
+            console.warn(err)
+          }
+          isCollecting = false
         }
       }
       window.addEventListener(eventType, handler, {
@@ -272,6 +284,11 @@ export class FpsStats {
       })
       this.monitorHandlers[eventType] = handler
     })
+    if (!this.monitorHandlers['blur']) {
+      const blurHandler = () => void(this.isWindowFocus = false)
+      window.addEventListener('blur', blurHandler)
+      this.monitorHandlers['blur'] = blurHandler
+    }
   }
 
   stopMonitor(events: string[] = []) {
