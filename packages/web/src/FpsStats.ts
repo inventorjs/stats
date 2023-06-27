@@ -81,7 +81,7 @@ export class FpsStats {
     lowThreshold = 0,
     lowThresholdPercent = 0.5,
     lowSamplePercent = 0.5,
-    collectDuration = 6 * 1000,
+    collectDuration = 10 * 1000,
     collectInterval = 1000,
     collectMaxCount = 0,
     monitorEvents = ['DOMContentLoaded', 'scroll', 'click', 'focus'],
