@@ -39,7 +39,7 @@ interface Params {
   /** 采集最大次数，达到采集最大次数则自动停止采集, 默认不限制 */
   collectMaxCount?: number
   /** 触发采集的事件 */
-  monitorEvents?: Array<'DOMContentLoaded' | 'scroll' | 'click'>
+  monitorEvents?: Array<'DOMContentLoaded' | 'scroll' | 'click' | 'focus'>
   /** 采集结果上报函数 */
   report?: (d: ReportData) => void
 }
