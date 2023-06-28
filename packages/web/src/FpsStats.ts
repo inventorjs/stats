@@ -5,9 +5,11 @@
 const FPS_EX_HIGH = 144
 const FPS_HIGH = 120
 const FPS_NORMAL = 60
+const FPS_LOW = 30
 const RATED_FRAME_NUM = 3
 const NORMAL_FRAME_TIME = 16
 const HIGH_FRAME_TIME = 8
+const LOW_FRAME_TIME = 33
 
 let isInited = false
 
@@ -56,9 +58,14 @@ interface Params {
   report?: (d: ReportData) => void
 }
 
+const REASON_LABEL = '@inventorjs/stats-web'
+
 export class FpsStats {
   collectPromise: Promise<{ samples: number[]; rafCount: number }> | null = null
-  stopCollect: (r: string) => void = () => {
+  stopCollect: (d: {
+    resolve?: { samples: number[]; rafCount: number }
+    reject?: unknown
+  }) => void = () => {
     //
   }
   lowThreshold = 0
@@ -69,7 +76,7 @@ export class FpsStats {
   collectMaxCount = 0
   collectCount = 0
   monitorEvents: MonitorEvents = []
-  RefreshNum = 0
+  lowRefreshNum = 0
   normalRefreshNum = 0
   highRefreshNum = 0
   exHighRefreshNum = 0
@@ -157,11 +164,14 @@ export class FpsStats {
       this.ratedFpsCache = FPS_HIGH
     } else if (this.normalRefreshNum > RATED_FRAME_NUM) {
       this.ratedFpsCache = FPS_NORMAL
+    } else if (this.lowRefreshNum > RATED_FRAME_NUM) {
+      this.ratedFpsCache = FPS_LOW
     } else {
       this.ratedFpsCache = 0
       this.exHighRefreshNum = 0
       this.highRefreshNum = 0
       this.normalRefreshNum = 0
+      this.lowRefreshNum = 0
     }
     return this.ratedFpsCache
   }
@@ -173,15 +183,17 @@ export class FpsStats {
       this.exHighRefreshNum += 1
     } else if (frameTime < NORMAL_FRAME_TIME) {
       this.highRefreshNum += 1
-    } else {
+    } else if (frameTime < LOW_FRAME_TIME) {
       this.normalRefreshNum += 1
+    } else {
+      this.lowRefreshNum += 1
     }
   }
 
   collect() {
     if (this.collectPromise) return this.collectPromise
+
     this.collectPromise = new Promise((resolve, reject) => {
-      const startTime = Date.now()
       let periodStartTime = 0
       let prevTime = 0
       let frames = 0
@@ -205,26 +217,28 @@ export class FpsStats {
             periodStartTime = time
             frames = 0
           }
-          if (Date.now() - startTime > this.collectDuration) {
-            this.collectPromise = null
-            return resolve({ samples, rafCount })
-          }
         }
         prevTime = time
         animater = window.requestAnimationFrame(doCollect.bind(self))
       }
-      // 避免 raf 不触发，一直等待
       animater = window.requestAnimationFrame(doCollect.bind(self))
-      const timer = setTimeout(() => {
-        this.collectPromise = null
-        resolve({ samples, rafCount })
-      }, this.collectDuration)
 
-      this.stopCollect = (reason) => {
+      // 定时停止采集任务
+      const timer = setTimeout(
+        () => this.stopCollect({ resolve: { samples, rafCount } }),
+        this.collectDuration,
+      )
+
+      // 用于随时终止当前采样任务
+      this.stopCollect = ({ resolve: data, reject: reason } = {}) => {
         this.collectPromise = null
         cancelAnimationFrame(animater)
         clearTimeout(timer)
-        reject(reason)
+        if (data) {
+          resolve(data)
+        } else {
+          reject(reason)
+        }
       }
     })
     return this.collectPromise
@@ -293,8 +307,11 @@ export class FpsStats {
       this.monitorHandlers[eventType] = handler
     })
     if (!this.monitorHandlers['blur']) {
+      // 窗口失去焦点，直接停止当前采集任务
       const blurHandler = () => {
-        this.stopCollect('@inventorjs/stats-web: lose focus, fps monitor stopd.')
+        this.stopCollect(
+          { reject: `${REASON_LABEL}: window lose focus, fps collect stopped.` },
+        )
       }
       window.addEventListener('blur', blurHandler)
       this.monitorHandlers['blur'] = blurHandler
@@ -302,6 +319,9 @@ export class FpsStats {
   }
 
   stopMonitor(events: string[] = []) {
+    this.stopCollect(
+      { reject: `${REASON_LABEL}: fps monitor stopped, fps collect stopped.` },
+    )
     let stopEvents = events
     if (!events.length) {
       stopEvents = this.monitorEvents
