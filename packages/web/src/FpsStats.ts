@@ -278,7 +278,7 @@ export class FpsStats {
         ) {
           return this.stopMonitor()
         }
-        if (!isCollecting) {
+        if (!isCollecting && !document.hidden) {
           this.collectCount += 1
           isCollecting = true
           try {
